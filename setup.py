@@ -8,8 +8,8 @@ with open("README.md", "r", encoding="utf-8") as fh:
 setup(
     name="langchain-anthropic-smart-cache",
     version="0.1.0",
-    author="Your Name",
-    author_email="your.email@example.com",
+    author="Imran Arshad",
+    author_email="imran.arshad01@gmail.com",
     description="Intelligent cache management for LangChain Anthropic models with advanced optimization strategies",
     long_description=long_description,
     long_description_content_type="text/markdown",

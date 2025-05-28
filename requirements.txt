@@ -1,3 +1,2 @@
-langchain-core>=0.1.0
-tiktoken>=0.5.0
-langchain-anthropic>=0.1.0
+langchain-core>=0.3.62
+tiktoken>=0.8.0

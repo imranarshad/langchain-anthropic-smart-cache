@@ -6,6 +6,8 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+> **📚 Learn about Anthropic's prompt caching:** [Official Documentation](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching)
+
 ## ⚡ What is this?
 
 A sophisticated callback handler that automatically optimizes Anthropic Claude's cache usage to **reduce costs and improve performance**. It implements intelligent priority-based caching that ensures your most important content (tools, system prompts, large content blocks) gets cached first.
@@ -22,7 +24,7 @@ A sophisticated callback handler that automatically optimizes Anthropic Claude's
 ## 📦 Installation
 
 ```bash
-pip install langchain-anthropic-smart-cache[anthropic]
+pip install langchain-anthropic-smart-cache
 ```
 
 ## 🚀 Quick Start
@@ -51,34 +53,151 @@ response = llm.invoke([
 ])
 ```
 
-## 🧠 How It Works
+## 🧠 How Smart Caching Works
 
-The handler implements a sophisticated priority system:
+### 🎯 Priority-Based Cache Management
 
-### Priority Levels
-1. **Priority 1**: Uncached tools (critical for function calling)
-2. **Priority 2**: Uncached system prompts (core instructions)
-3. **Priority 3**: Content blocks (user data, sorted by size)
-4. **Priority 4**: Cached tools (refresh if slots available)
-5. **Priority 5**: Cached system prompts (refresh if slots available)
+The system uses a sophisticated 5-level priority system to ensure the most valuable content gets cached first:
 
-### Smart Caching Logic
+```mermaid
+graph TD
+    A[Incoming Request] --> B{Analyze Content}
+    B --> C[Tools Available?]
+    B --> D[System Prompts?]
+    B --> E[User Content]
+
+    C --> F{Tools Cached?}
+    F -->|No| G[Priority 1: Cache Tools]
+    F -->|Yes, Fresh| H[Skip Tools]
+    F -->|Yes, Expiring| I[Priority 4: Refresh Tools]
+
+    D --> J{System Cached?}
+    J -->|No| K[Priority 2: Cache System]
+    J -->|Yes, Fresh| L[Skip System]
+    J -->|Yes, Expiring| M[Priority 5: Refresh System]
+
+    E --> N[Priority 3: Cache Content by Size]
+
+    G --> O[Allocate Cache Slots]
+    K --> O
+    N --> O
+    I --> O
+    M --> O
+
+    O --> P{Slots Available?}
+    P -->|Yes| Q[Apply Cache Control]
+    P -->|No| R[Skip Lower Priority Items]
 ```
-🔄 Cache Cycle:
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│ Tools Expired   │ →  │ Tools Priority 1│ →  │ Gets Slot 1     │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
 
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│ System Cached   │ →  │ System Priority │ →  │ No Slot Needed │
-│ (Still Valid)   │    │ 5 (Low)         │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+### 🔄 Cache Lifecycle Flow
 
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│ Content Mixed   │ →  │ Content Prior.3 │ →  │ Largest Blocks  │
-│ (Some Cached)   │    │ (Size Sorted)   │    │ Get Remaining   │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+```mermaid
+sequenceDiagram
+    participant User
+    participant Handler as SmartCacheHandler
+    participant Cache as Cache Storage
+    participant Claude as Anthropic API
+
+    User->>Handler: Send Request with Tools + System + Content
+    Handler->>Cache: Check existing cache status
+    Cache-->>Handler: Return cache metadata
+
+    Note over Handler: Priority Analysis
+    Handler->>Handler: Priority 1: Uncached Tools
+    Handler->>Handler: Priority 2: Uncached System
+    Handler->>Handler: Priority 3: Content (by size)
+    Handler->>Handler: Priority 4: Expiring Tools
+    Handler->>Handler: Priority 5: Expiring System
+
+    Note over Handler: Slot Allocation (Max 4)
+    Handler->>Handler: Assign cache_control headers
+    Handler->>Claude: Send optimized request
+    Claude-->>Handler: Response with cache info
+    Handler->>Cache: Update cache metadata
+    Handler-->>User: Response + Cache Analytics
 ```
+
+### 🎲 Decision Algorithm
+
+The cache decision algorithm follows this logic:
+
+```mermaid
+flowchart TD
+    Start([New Request]) --> Clear[Clear Previous Cache Controls]
+    Clear --> Parse[Parse Messages for Tools/System/Content]
+
+    Parse --> CheckTools{Tools Present?}
+    CheckTools -->|Yes| ToolsCached{Tools Cached & Fresh?}
+    CheckTools -->|No| CheckSystem{System Prompts?}
+
+    ToolsCached -->|No| AddTools[Add Tools - Priority 1]
+    ToolsCached -->|Yes| CheckSystem
+
+    CheckSystem -->|Yes| SystemCached{System Cached & Fresh?}
+    CheckSystem -->|No| ProcessContent[Process Content Blocks]
+
+    SystemCached -->|No| AddSystem[Add System - Priority 2]
+    SystemCached -->|Yes| ProcessContent
+
+    ProcessContent --> SortContent[Sort Content by Token Count]
+    SortContent --> AddContent[Add Content - Priority 3]
+
+    AddTools --> CheckSlots{Slots < 4?}
+    AddSystem --> CheckSlots
+    AddContent --> CheckSlots
+
+    CheckSlots -->|Yes| MoreContent{More Items?}
+    CheckSlots -->|No| RefreshCheck{Expired Items to Refresh?}
+
+    MoreContent -->|Yes| AddContent
+    MoreContent -->|No| RefreshCheck
+
+    RefreshCheck -->|Yes| AddRefresh[Add Refresh - Priority 4/5]
+    RefreshCheck -->|No| Complete[Complete Cache Assignment]
+
+    AddRefresh --> FinalCheck{Slots < 4?}
+    FinalCheck -->|Yes| RefreshCheck
+    FinalCheck -->|No| Complete
+
+    Complete --> SendRequest[Send to Anthropic API]
+    SendRequest --> UpdateCache[Update Cache Metadata]
+    UpdateCache --> End([Return Response])
+
+    style AddTools fill:#ff6b6b
+    style AddSystem fill:#4ecdc4
+    style AddContent fill:#45b7d1
+    style AddRefresh fill:#96ceb4
+```
+
+### 💡 Priority System Explained
+
+| Priority | Type | Condition | Why? |
+|----------|------|-----------|------|
+| **1** 🔴 | Tools | Not cached or expired | Critical for function calling - failures break functionality |
+| **2** 🟠 | System | Not cached or expired | Core instructions that define AI behavior |
+| **3** 🟡 | Content | Always evaluated | User data, sorted by size for maximum cache efficiency |
+| **4** 🟢 | Tools | Cached but expiring soon | Refresh tools proactively to avoid cache misses |
+| **5** 🔵 | System | Cached but expiring soon | Refresh system prompts when slots available |
+
+### 📊 Cache Efficiency Example
+
+```mermaid
+pie title Cache Slot Allocation Example
+    "Tools (Priority 1)" : 25
+    "System (Priority 2)" : 25
+    "Large Content (Priority 3)" : 35
+    "Medium Content (Priority 3)" : 15
+```
+
+**Scenario**: 4 available slots, competing content
+- 🔴 **Slot 1**: Tools (3,000 tokens) - Priority 1 (uncached)
+- 🟠 **Slot 2**: System prompt (1,200 tokens) - Priority 2 (uncached)
+- 🟡 **Slot 3**: Large content (5,000 tokens) - Priority 3 (new)
+- 🟡 **Slot 4**: Medium content (2,000 tokens) - Priority 3 (new)
+- ❌ **Skipped**: Small content (800 tokens) - Priority 3 (below minimum)
+- ❌ **Skipped**: Cached system refresh (1,200 tokens) - Priority 5 (no slots left)
+
+**Result**: 11,200 tokens cached, optimizing for both functionality and cost savings.
 
 ## 📊 Cache Analytics
 
@@ -142,9 +261,9 @@ print(f"Estimated cost savings: ${stats.estimated_savings:.2f}")
 ## 🔧 Requirements
 
 - **Python 3.8+**
-- **langchain-core >= 0.1.0**
-- **langchain-anthropic >= 0.1.0**
-- **tiktoken >= 0.5.0**
+- **langchain-core >= 0.3.62**
+- **langchain-anthropic >= 0.3.14**
+- **tiktoken >= 0.8.0**
 
 > **Note**: This package is specifically designed for Anthropic Claude models that support the `cache_control` feature. Other providers may be added in future versions.
 

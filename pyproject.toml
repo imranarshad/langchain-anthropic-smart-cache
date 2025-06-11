@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Intelligent cache management for LangChain Anthropic models with advanced optimization strategies"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Imran Arshad", email = "imran.arshad01@gmail.com"},
 ]
@@ -16,7 +16,6 @@ keywords = ["langchain", "cache", "anthropic", "claude", "optimization", "ai", "
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
@@ -43,10 +42,10 @@ dev = [
 anthropic = ["langchain-anthropic>=0.1.0"]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/langchain-anthropic-smart-cache"
-"Bug Reports" = "https://github.com/yourusername/langchain-anthropic-smart-cache/issues"
-Source = "https://github.com/yourusername/langchain-anthropic-smart-cache"
-Documentation = "https://github.com/yourusername/langchain-anthropic-smart-cache#readme"
+Homepage = "https://github.com/imranarshad/langchain-anthropic-smart-cache"
+"Bug Reports" = "https://github.com/imranarshad/langchain-anthropic-smart-cache/issues"
+Source = "https://github.com/imranarshad/langchain-anthropic-smart-cache"
+Documentation = "https://github.com/imranarshad/langchain-anthropic-smart-cache#readme"
 
 [tool.black]
 line-length = 88

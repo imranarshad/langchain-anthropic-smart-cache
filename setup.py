@@ -13,12 +13,11 @@ setup(
     description="Intelligent cache management for LangChain Anthropic models with advanced optimization strategies",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/langchain-anthropic-smart-cache",
+    url="https://github.com/imranarshad/langchain-anthropic-smart-cache",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
-        "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.8",
@@ -46,8 +45,8 @@ setup(
     },
     keywords="langchain, cache, anthropic, claude, optimization, ai, llm",
     project_urls={
-        "Bug Reports": "https://github.com/yourusername/langchain-anthropic-smart-cache/issues",
-        "Source": "https://github.com/yourusername/langchain-anthropic-smart-cache",
-        "Documentation": "https://github.com/yourusername/langchain-anthropic-smart-cache#readme",
+        "Bug Reports": "https://github.com/imranarshad/langchain-anthropic-smart-cache/issues",
+        "Source": "https://github.com/imranarshad/langchain-anthropic-smart-cache",
+        "Documentation": "https://github.com/imranarshad/langchain-anthropic-smart-cache#readme",
     },
 )

@@ -10,8 +10,8 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import LLMResult
 
-from .cache import CacheManager, CacheEntry, CacheStats
-from .utils import TokenCounter, ContentAnalyzer
+from langchain_anthropic_smart_cache.cache import CacheManager, CacheEntry, CacheStats
+from langchain_anthropic_smart_cache.utils import TokenCounter, ContentAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -270,10 +270,7 @@ class SmartCacheCallbackHandler(BaseCallbackHandler):
                                 'cache_control': {'type': 'ephemeral'}
                             }
                 else:
-                    # Simple string content - use additional_kwargs
-                    if not hasattr(message, 'additional_kwargs'):
-                        message.additional_kwargs = {}
-                    message.additional_kwargs['cache_control'] = {'type': 'ephemeral'}
+                    message.content = [{'type': 'text', 'text': str(message.content), 'cache_control': {'type': 'ephemeral'}}]
 
                 if self.enable_logging:
                     action = "MAINTAIN" if candidate.is_cached else "NEW"

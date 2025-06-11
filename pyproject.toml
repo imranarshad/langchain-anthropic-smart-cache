@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "langchain-anthropic-smart-cache"
-version = "0.1.0"
+version = "0.2.0"
 description = "Intelligent cache management for LangChain Anthropic models with advanced optimization strategies"
 readme = "README.md"
 requires-python = ">=3.8"

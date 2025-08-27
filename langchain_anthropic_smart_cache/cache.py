@@ -72,9 +72,27 @@ class CacheManager:
         self._load_cache_from_disk()
 
     def _get_cache_key(self, content: Any) -> str:
-        """Generate a cache key for content."""
-        content_str = json.dumps(content, sort_keys=True, default=str)
+        """Generate a cache key for content, excluding cache_control."""
+        import copy
+
+        # Deep copy to avoid modifying original
+        clean_content = copy.deepcopy(content)
+
+        # Remove cache_control from any level
+        self._remove_cache_control(clean_content)
+
+        content_str = json.dumps(clean_content, sort_keys=True, default=str)
         return hashlib.sha256(content_str.encode()).hexdigest()[:16]
+
+    def _remove_cache_control(self, obj: Any) -> None:
+        """Recursively remove cache_control from any object."""
+        if isinstance(obj, dict):
+            obj.pop('cache_control', None)
+            for value in obj.values():
+                self._remove_cache_control(value)
+        elif isinstance(obj, list):
+            for item in obj:
+                self._remove_cache_control(item)
 
     def _load_cache_from_disk(self) -> None:
         """Load cache entries from disk."""

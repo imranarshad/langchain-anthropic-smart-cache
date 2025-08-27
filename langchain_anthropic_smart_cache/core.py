@@ -88,19 +88,31 @@ class SmartCacheCallbackHandler(BaseCallbackHandler):
         """
         try:
             # Extract tools and flatten messages
-            tools = serialized.get('kwargs', {}).get('tools', [])
+            tools = kwargs.get('tools', []) or kwargs.get('invocation_params', {}).get('tools', [])
             all_messages = []
             for message_list in messages:
                 all_messages.extend(message_list)
-
-            if self.enable_logging:
-                logger.info(f"🚀 Smart cache processing: {len(all_messages)} messages, {len(tools)} tools")
 
             # Clear any existing cache control to avoid conflicts
             self._clear_existing_cache_controls(all_messages, tools)
 
             # Apply smart caching
             self._apply_smart_caching(all_messages, tools)
+
+            # Final summary logging
+            if self.enable_logging:
+                cached_indices = []
+                for i, message in enumerate(all_messages):
+                    if hasattr(message, 'content') and isinstance(message.content, list):
+                        for item in message.content:
+                            if isinstance(item, dict) and 'cache_control' in item:
+                                cached_indices.append(i)
+                                break
+
+                tool_count = sum(1 for tool in tools if isinstance(tool, dict) and 'cache_control' in tool)
+                total_blocks = len(cached_indices) + tool_count
+
+                logger.info(f"🎯 FINAL: messages{cached_indices} + {tool_count} tools = {total_blocks}/4 slots")
 
         except Exception as e:
             logger.error(f"Error in smart cache processing: {e}")
@@ -109,13 +121,9 @@ class SmartCacheCallbackHandler(BaseCallbackHandler):
                 logger.debug(f"Full traceback: {traceback.format_exc()}")
 
     def _clear_existing_cache_controls(self, messages: List[BaseMessage], tools: List[Dict[str, Any]]) -> None:
-        """Clear any existing cache_control tags to prevent conflicts."""
-        # Clear cache controls from messages
+        """Clear existing cache_control tags."""
+        # Clear cache controls from message content
         for message in messages:
-            if hasattr(message, 'additional_kwargs') and message.additional_kwargs:
-                message.additional_kwargs.pop('cache_control', None)
-
-            # Handle multimodal content
             if hasattr(message, 'content') and isinstance(message.content, list):
                 for item in message.content:
                     if isinstance(item, dict) and 'cache_control' in item:
@@ -126,13 +134,16 @@ class SmartCacheCallbackHandler(BaseCallbackHandler):
             if isinstance(tool, dict) and 'cache_control' in tool:
                 del tool['cache_control']
 
-        if self.enable_logging:
-            logger.debug("🧹 Cleared existing cache controls")
-
     def _apply_smart_caching(self, messages: List[BaseMessage], tools: List[Dict[str, Any]]) -> None:
         """Apply intelligent caching strategy to messages and tools."""
         # Collect cache candidates
         cache_candidates = []
+
+        # Track cache statistics
+        total_tools = len(tools) if tools else 0
+        cached_tools = 0
+        total_messages = 0
+        cached_messages = 0
 
         # 1. ANALYZE TOOLS
         if tools:
@@ -141,21 +152,21 @@ class SmartCacheCallbackHandler(BaseCallbackHandler):
                 cache_entry = self.cache_manager.get({'tools': tools})
                 is_cached = cache_entry is not None
 
-                # Tools get high priority when not cached, lower when cached
-                priority = 4 if is_cached else 1
+                if is_cached:
+                    cached_tools = 1
 
-                cache_candidates.append(CacheCandidate(
-                    content={'tools': tools},
-                    token_count=tools_analysis['token_count'],
-                    content_type='tools',
-                    priority=priority,
-                    is_cached=is_cached,
-                    cache_entry=cache_entry
-                ))
+                # Skip if already cached and not expired - no need to cache again!
+                if not is_cached:
+                    cache_candidates.append(CacheCandidate(
+                        content={'tools': tools},
+                        token_count=tools_analysis['token_count'],
+                        content_type='tools',
+                        priority=1,  # Always high priority when not cached
+                        is_cached=False,
+                        cache_entry=None
+                    ))
 
-                if self.enable_logging:
-                    status = f"cached (age: {cache_entry.age_seconds():.1f}s)" if is_cached else "not cached"
-                    logger.info(f"🔧 Found tools: {tools_analysis['tool_count']} tools, {tools_analysis['token_count']} tokens, {status}")
+
 
         # 2. ANALYZE MESSAGES
         for i, message in enumerate(messages):
@@ -164,33 +175,39 @@ class SmartCacheCallbackHandler(BaseCallbackHandler):
             analysis = self.content_analyzer.analyze_message(message_dict)
 
             if analysis['cacheable'] and analysis['token_count'] >= self.min_token_count:
+                total_messages += 1
+
                 # Check if already cached
                 cache_entry = self.cache_manager.get(message_dict)
                 is_cached = cache_entry is not None
 
-                # Adjust priority based on cache status
-                if analysis['content_type'] == 'system':
-                    priority = 5 if is_cached else 2  # High priority when not cached
-                else:
-                    priority = analysis['priority']
+                if is_cached:
+                    cached_messages += 1
 
-                cache_candidates.append(CacheCandidate(
-                    content=message_dict,
-                    token_count=analysis['token_count'],
-                    content_type=analysis['content_type'],
-                    priority=priority,
-                    is_cached=is_cached,
-                    cache_entry=cache_entry
-                ))
+                # Skip if already cached and not expired - no need to cache again!
+                if not is_cached:
+                    # Only cache NEW content that needs caching
+                    if analysis['content_type'] == 'system':
+                        priority = 2  # High priority for new system content
+                    else:
+                        priority = analysis['priority']  # Use base priority for new content
 
-                if self.enable_logging:
-                    status = f"cached (age: {cache_entry.age_seconds():.1f}s)" if is_cached else "not cached"
-                    logger.info(f"📝 Found {analysis['content_type']} message: {analysis['token_count']} tokens, {status}")
+                    cache_candidates.append(CacheCandidate(
+                        content=message_dict,
+                        token_count=analysis['token_count'],
+                        content_type=analysis['content_type'],
+                        priority=priority,
+                        is_cached=False,
+                        cache_entry=None
+                    ))
 
-        if self.enable_logging:
-            logger.info(f"🎯 Found {len(cache_candidates)} cacheable items")
 
         # 3. SMART PRIORITIZATION AND SLOT ALLOCATION
+        if self.enable_logging:
+            new_messages = total_messages - cached_messages
+            new_tools = total_tools - cached_tools
+            logger.info(f"🚀 CACHE: {total_messages} messages ({cached_messages} cached, {new_messages} new), {total_tools} tools ({cached_tools} cached, {new_tools} new)")
+
         self._allocate_cache_slots(cache_candidates, messages, tools)
 
     def _allocate_cache_slots(
@@ -207,6 +224,23 @@ class SmartCacheCallbackHandler(BaseCallbackHandler):
 
         # Sort by priority (lower = higher priority), then by token count (descending)
         cache_candidates.sort(key=lambda x: (x.priority, -x.token_count))
+
+        if self.enable_logging:
+            # Compact table showing what gets selected/skipped
+            selected = cache_candidates[:self.max_cache_blocks]
+            skipped = cache_candidates[self.max_cache_blocks:]
+
+            logger.info(f"📊 CACHE SELECTION ({len(cache_candidates)} candidates → {len(selected)} selected)")
+
+            for i, candidate in enumerate(selected):
+                status = "CACHED" if candidate.is_cached else "NEW"
+                age = f"{candidate.cache_entry.age_seconds():.0f}s" if candidate.cache_entry else "0s"
+                logger.info(f"  ✅ {candidate.content_type} p={candidate.priority} {status}({age}) {candidate.token_count}t")
+
+            for candidate in skipped:
+                status = "CACHED" if candidate.is_cached else "NEW"
+                age = f"{candidate.cache_entry.age_seconds():.0f}s" if candidate.cache_entry else "0s"
+                logger.info(f"  ❌ {candidate.content_type} p={candidate.priority} {status}({age}) {candidate.token_count}t")
 
         cached_items = []
         skipped_items = []
@@ -244,10 +278,6 @@ class SmartCacheCallbackHandler(BaseCallbackHandler):
             # Add cache control to the last tool
             tools[-1]['cache_control'] = {'type': 'ephemeral'}
 
-            if self.enable_logging:
-                action = "MAINTAIN" if candidate.is_cached else "NEW"
-                logger.info(f"💾 CACHED tools (slot {len([c for c in [candidate] if c.content_type == 'tools'])}/4) - {action} tools {'refresh' if candidate.is_cached else 'needed caching'}")
-
     def _apply_message_caching(self, messages: List[BaseMessage], candidate: CacheCandidate) -> None:
         """Apply cache control to a message."""
         # Find the message that matches this candidate
@@ -272,14 +302,6 @@ class SmartCacheCallbackHandler(BaseCallbackHandler):
                 else:
                     message.content = [{'type': 'text', 'text': str(message.content), 'cache_control': {'type': 'ephemeral'}}]
 
-                if self.enable_logging:
-                    action = "MAINTAIN" if candidate.is_cached else "NEW"
-                    if candidate.is_cached and candidate.cache_entry:
-                        age = candidate.cache_entry.age_seconds()
-                        if age > self.cache_duration * 0.8:  # Near expiry
-                            action = "REFRESH"
-
-                    logger.info(f"💾 CACHED {candidate.content_type} (slot X/4, {candidate.token_count} tokens) - {action} {'existing cache' if candidate.is_cached else candidate.content_type + ' block'}")
                 break
 
     def _message_matches_candidate(self, message: BaseMessage, message_dict: Dict[str, Any]) -> bool:
@@ -307,33 +329,12 @@ class SmartCacheCallbackHandler(BaseCallbackHandler):
         skipped_items: List[CacheCandidate],
         used_slots: int
     ) -> None:
-        """Log detailed cache operation results."""
+        """Log compact cache operation results."""
         if not self.enable_logging:
             return
 
-        # Log skipped items
-        if skipped_items:
-            logger.info(f"🚫 SKIPPED ITEMS ({len(skipped_items)} items):")
-            for item in skipped_items:
-                reason = "no slots available" if used_slots >= self.max_cache_blocks else "lower priority"
-                logger.info(f"  ❌ {item} - {reason}")
-
-        # Calculate statistics
-        previously_cached = sum(1 for item in cached_items if item.is_cached)
-        newly_cached = len(cached_items) - previously_cached
-
-        cached_tokens = sum(item.token_count for item in cached_items)
-        skipped_tokens = sum(item.token_count for item in skipped_items)
-
-        cache_rate = (previously_cached / len(cached_items) * 100) if cached_items else 0
-
-        # Summary log
-        logger.info("📊 CACHE SUMMARY:")
-        logger.info(f"  🎯 Slots used: {used_slots}/{self.max_cache_blocks}")
-        logger.info(f"  ⚡ Previously cached: {previously_cached} items ({cache_rate:.1f}%)")
-        logger.info(f"  💾 Newly cached: {newly_cached} items")
-        logger.info(f"  🚫 Skipped: {len(skipped_items)} items")
-        logger.info(f"  📈 Cached tokens: {cached_tokens:,} | Skipped tokens: {skipped_tokens:,}")
+        # Just the essentials - already logged above in selection
+        pass
 
     def get_stats(self) -> CacheStats:
         """Get cache performance statistics."""
